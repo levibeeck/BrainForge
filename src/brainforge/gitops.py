@@ -3,10 +3,18 @@
 from __future__ import annotations
 
 import contextlib
-import fcntl
 import subprocess
+import sys
 from collections.abc import Callable, Iterator
 from pathlib import Path
+
+# ponytail: locking APIs differ by platform; flock has no Windows equivalent, so we branch here instead
+# of adding a dependency. Upgrade path: a small cross-platform file-locking library, if we ever need more
+# than an exclusive non-blocking lock on one file.
+if sys.platform == "win32":
+    import msvcrt
+else:
+    import fcntl
 
 
 class GitError(Exception):
@@ -181,7 +189,15 @@ def lock(root: Path) -> Iterator[None]:
     git_dir = Path(git(root, "rev-parse", "--absolute-git-dir").strip())
     with open(git_dir / "brainforge.lock", "w") as fh:
         try:
-            fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
+            if sys.platform == "win32":
+                msvcrt.locking(fh.fileno(), msvcrt.LK_NBLCK, 1)
+            else:
+                fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
             raise GitError("another BrainForge run holds the lock on this repository") from None
-        yield
+        try:
+            yield
+        finally:
+            if sys.platform == "win32":
+                fh.seek(0)
+                msvcrt.locking(fh.fileno(), msvcrt.LK_UNLCK, 1)
