@@ -8,9 +8,6 @@ import sys
 from collections.abc import Callable, Iterator
 from pathlib import Path
 
-# ponytail: locking APIs differ by platform; flock has no Windows equivalent, so we branch here instead
-# of adding a dependency. Upgrade path: a small cross-platform file-locking library, if we ever need more
-# than an exclusive non-blocking lock on one file.
 if sys.platform == "win32":
     import msvcrt
 else:
